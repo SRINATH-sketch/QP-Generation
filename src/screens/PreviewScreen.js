@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, SafeAreaView, Alert, Platform } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, SafeAreaView, Alert, Platform, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import CustomScrollbar from '../components/CustomScrollbar';
 
 export default function PreviewScreen({ route, navigation }) {
-    const { query, syllabusFiles, outcomeFiles, textbookFiles, attachments } = route.params || {};
+    const { query, syllabusFiles, outcomeFiles, textbookFiles, attachments, isDarkMode } = route.params || {};
 
     // State to hold the single generated paper's sections
     const [sections, setSections] = useState([]);
     const [isGenerating, setIsGenerating] = useState(true);
+
+
+    // Scrollbar State
+    const [scrollOffset, setScrollOffset] = useState(0);
+    const [contentHeight, setContentHeight] = useState(0);
+    const [containerHeight, setContainerHeight] = useState(0);
+
+    const { height: windowHeight } = useWindowDimensions();
+    const headerHeight = 70; // Approximate header height
 
     useEffect(() => {
         // Simulate generation delay
@@ -94,49 +106,150 @@ export default function PreviewScreen({ route, navigation }) {
         }));
     };
 
-    const handleFinalDownload = () => {
-        // Calculate selected questions
-        let count = 0;
-        sections.forEach(s => s.questions.forEach(q => { if (q.selected) count++ }));
-        Alert.alert("Download Question Paper", `Generating PDF with ${count} selected questions...`);
+    const generateHTML = () => {
+        const content = sections.map((sec, secIndex) => { // Added secIndex if needed later, but mainly logic change
+            const selectedQuestions = sec.questions.filter(q => q.selected);
+
+            if (selectedQuestions.length === 0) return ''; // Skip empty sections
+
+            const sectionTitle = `<div class="part">${sec.title}</div>`;
+            const questionsHtml = selectedQuestions
+                .map((q, index) => `<div class="question">${index + 1}. ${q.text}</div>`)
+                .join('');
+            return sectionTitle + questionsHtml;
+        }).join('');
+
+        return `
+            <html>
+            <head>
+                <style>
+                    /* Reset and Print Settings */
+                    @page { size: auto; margin: 20mm; }
+                    * { box-sizing: border-box; }
+                    
+                    html, body {
+                        width: 100%;
+                        height: 100%; 
+                        margin: 0;
+                        padding: 0;
+                        overflow: visible;
+                        display: block; /* Ensure block layout */
+                    }
+                    
+                    body { 
+                        font-family: 'Times New Roman', serif; /* More academic look */
+                        padding: 20px;
+                        background: #fff;
+                    }
+
+                    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 20px; }
+                    .uni { font-size: 16pt; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; }
+                    .title { font-size: 14pt; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; }
+                    .meta { font-size: 12pt; color: #000; margin-top: 5px; }
+                    
+                    .part { 
+                        margin-top: 25px; 
+                        font-size: 13pt;
+                        font-weight: bold; 
+                        text-decoration: underline; 
+                        margin-bottom: 15px; 
+                        page-break-after: avoid; 
+                    }
+                    
+                    .question { 
+                        margin-bottom: 15px; 
+                        font-size: 12pt; 
+                        line-height: 1.5;
+                        page-break-inside: avoid; 
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div class="uni">B.E / B.Tech DEGREE EXAMINATION</div>
+                    <div class="title">ARTIFICIAL INTELLIGENCE AND MACHINE LEARNING</div>
+                    <div class="meta">Regulation 2026 | Semester VI</div>
+                </div>
+                ${content}
+            </body>
+            </html>
+        `;
+    };
+
+    const handleFinalDownload = async () => {
+        try {
+            const html = generateHTML();
+            if (Platform.OS === 'web') {
+                // Open a new window for reliable printing (bypasses app layout constraints)
+                const printWindow = window.open('', '_blank');
+                if (printWindow) {
+                    printWindow.document.write(html);
+                    printWindow.document.close(); // Finish writing
+                    printWindow.focus();
+                    // Small delay to ensure rendering
+                    setTimeout(() => {
+                        printWindow.print();
+                        printWindow.close();
+                    }, 500);
+                } else {
+                    Alert.alert("Popup Blocked", "Please allow popups to download the PDF");
+                }
+            } else {
+                const { uri } = await Print.printToFileAsync({ html });
+                await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+            }
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Error", "Failed to generate document");
+        }
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar style="auto" />
+        <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
+            <StatusBar style={isDarkMode ? "light" : "dark"} />
 
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, isDarkMode && styles.headerDark]}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#333" />
+                    <Ionicons name="arrow-back" size={24} color={isDarkMode ? "#fff" : "#333"} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Review & Download</Text>
+                <Text style={[styles.headerTitle, isDarkMode && styles.textDark]}>Review & Download</Text>
                 <TouchableOpacity onPress={handleFinalDownload}>
                     <Ionicons name="cloud-download-outline" size={24} color="#3b82f6" />
                 </TouchableOpacity>
             </View>
 
+
+
             {/* Main Content */}
-            <ScrollView contentContainerStyle={styles.content}>
+            <ScrollView
+                style={{ height: windowHeight - headerHeight }} // EXPLICIT HEIGHT
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={true}
+                scrollEventThrottle={16}
+                onScroll={e => setScrollOffset(e.nativeEvent.contentOffset.y)}
+                onContentSizeChange={(w, h) => setContentHeight(h)}
+                onLayout={e => setContainerHeight(e.nativeEvent.layout.height)}
+            >
 
                 {isGenerating ? (
                     <View style={styles.loadingContainer}>
                         <Ionicons name="sync" size={40} color="#3b82f6" style={styles.spinningIcon} />
-                        <Text style={styles.loadingText}>Analyzing Syllabus & Generating Questions...</Text>
-                        <Text style={styles.subLoadingText}>Generating AIML related questions...</Text>
+                        <Text style={[styles.loadingText, isDarkMode && styles.textDark]}>Analyzing Syllabus & Generating Questions...</Text>
+                        <Text style={[styles.subLoadingText, isDarkMode && styles.textGrayDark]}>Generating AIML related questions...</Text>
                     </View>
                 ) : (
-                    <View style={styles.paperContainer}>
-                        <View style={styles.paperHeader}>
-                            <Text style={styles.uniName}>B.E / B.Tech DEGREE EXAMINATION</Text>
-                            <Text style={styles.examTitle}>ARTIFICIAL INTELLIGENCE AND MACHINE LEARNING</Text>
-                            <Text style={styles.subText}>Regulation 2026 | Semester VI</Text>
+                    <View style={[styles.paperContainer, isDarkMode && styles.paperContainerDark]}>
+                        <View style={[styles.paperHeader, isDarkMode && styles.paperHeaderDark]}>
+                            <Text style={[styles.uniName, isDarkMode && styles.textDark]}>B.E / B.Tech DEGREE EXAMINATION</Text>
+                            <Text style={[styles.examTitle, isDarkMode && styles.textDark]}>ARTIFICIAL INTELLIGENCE AND MACHINE LEARNING</Text>
+                            <Text style={[styles.subText, isDarkMode && styles.textGrayDark]}>Regulation 2026 | Semester VI</Text>
                         </View>
 
                         {sections.map((section, secIdx) => (
                             <View key={secIdx} style={styles.sectionBlock}>
                                 <View style={styles.sectionHeaderBox}>
-                                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                                    <Text style={[styles.sectionTitle, isDarkMode && styles.textDark]}>{section.title}</Text>
                                     <View style={styles.line} />
                                 </View>
 
@@ -155,7 +268,7 @@ export default function PreviewScreen({ route, navigation }) {
                                             />
                                         </View>
                                         <View style={styles.questionTextBox}>
-                                            <Text style={[styles.questionText, !q.selected && styles.disabledText]}>
+                                            <Text style={[styles.questionText, !q.selected && styles.disabledText, isDarkMode && styles.textGrayDark]}>
                                                 {qIdx + 1}. {q.text}
                                             </Text>
                                         </View>
@@ -170,10 +283,10 @@ export default function PreviewScreen({ route, navigation }) {
 
             {/* Bottom Action Button */}
             {!isGenerating && (
-                <View style={styles.footer}>
+                <View style={[styles.footer, isDarkMode && styles.footerDark]}>
                     <TouchableOpacity style={styles.downloadButton} onPress={handleFinalDownload}>
-                        <Text style={styles.downloadButtonText}>Download Final Question Paper</Text>
-                        <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 10 }} />
+                        <Text style={styles.downloadButtonText}>Download Question Paper</Text>
+                        <Ionicons name="cloud-download" size={20} color="#fff" style={{ marginLeft: 10 }} />
                     </TouchableOpacity>
                 </View>
             )}
@@ -184,6 +297,7 @@ export default function PreviewScreen({ route, navigation }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        height: Platform.OS === 'web' ? '100vh' : '100%',
         backgroundColor: '#F3F4F6',
     },
     header: {
@@ -329,10 +443,76 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.2,
         shadowRadius: 8,
         elevation: 4,
+        alignSelf: 'center',
+        width: '60%',
     },
     downloadButtonText: {
         color: '#fff',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    containerDark: {
+        backgroundColor: '#111827',
+    },
+    headerDark: {
+        backgroundColor: '#1F2937',
+        borderBottomColor: '#374151',
+    },
+    textDark: {
+        color: '#F9FAFB',
+    },
+    textGrayDark: {
+        color: '#D1D5DB',
+    },
+    paperContainerDark: {
+        backgroundColor: '#1F2937',
+        shadowColor: '#000',
+    },
+    paperHeaderDark: {
+        borderBottomColor: '#374151',
+    },
+    footerDark: {
+        backgroundColor: '#1F2937',
+        borderTopColor: '#374151',
+    },
+    formatSelector: {
+        marginBottom: 15,
+    },
+    formatLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#4B5563',
+        marginBottom: 8,
+        marginLeft: 4,
+    },
+    formatOptions: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    formatChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        backgroundColor: '#F3F4F6',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+    },
+    formatChipDark: {
+        backgroundColor: '#374151',
+        borderColor: '#4B5563',
+    },
+    formatChipActive: {
+        backgroundColor: '#3b82f6',
+        borderColor: '#3b82f6',
+    },
+    formatText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#4B5563',
+    },
+    formatTextActive: {
+        color: '#fff',
     },
 });

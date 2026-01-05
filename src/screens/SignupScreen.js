@@ -3,12 +3,21 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, SafeAreaView, Keyb
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 
+import CustomScrollbar from '../components/CustomScrollbar';
+
+
+
 export default function SignupScreen({ navigation }) {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+
+    // Scrollbar State
+    const [scrollOffset, setScrollOffset] = useState(0);
+    const [contentHeight, setContentHeight] = useState(0);
+    const [containerHeight, setContainerHeight] = useState(0);
 
     const handleSignup = () => {
         // Navigate home on success (mock)
@@ -22,7 +31,15 @@ export default function SignupScreen({ navigation }) {
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 style={{ flex: 1 }}
             >
-                <ScrollView contentContainerStyle={styles.scrollContent}>
+                <ScrollView
+                    style={{ flex: 1 }}
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={true}
+                    scrollEventThrottle={16}
+                    onScroll={e => setScrollOffset(e.nativeEvent.contentOffset.y)}
+                    onContentSizeChange={(w, h) => setContentHeight(h)}
+                    onLayout={e => setContainerHeight(e.nativeEvent.layout.height)}
+                >
 
                     <View style={styles.card}>
                         <View style={styles.header}>

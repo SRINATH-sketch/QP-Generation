@@ -10,11 +10,14 @@ import SignupScreen from './src/screens/SignupScreen';
 
 import ErrorBoundary from './src/components/ErrorBoundary';
 
+import GlobalStyles from './src/components/GlobalStyles';
+
 const Stack = createStackNavigator();
 
 export default function App() {
   return (
     <SafeAreaProvider style={{ flex: 1 }}>
+      <GlobalStyles />
       <ErrorBoundary>
         <NavigationContainer>
           <Stack.Navigator

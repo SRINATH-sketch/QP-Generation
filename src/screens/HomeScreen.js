@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, ScrollView, TouchableOpacity, Dimensions, Alert, Modal, Image, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, Text, View, TextInput, ScrollView, TouchableOpacity, Dimensions, Alert, Modal, Image, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import CustomScrollbar from '../components/CustomScrollbar';
 
 
 
@@ -15,7 +16,7 @@ const UploadCard = ({ title, onUpload, files, onRemove, isDarkMode }) => (
     {files && files.length > 0 && (
       <View style={{ marginBottom: 15 }}>
         {files.map((file, index) => (
-          <View key={index} style={[uploadStyles.fileItem, isDarkMode && uploadStyles.dashedBoxDark]}>
+          <View key={index} style={[uploadStyles.fileItem, isDarkMode && uploadStyles.fileItemDark]}>
             <Ionicons name="document-text" size={24} color="#3b82f6" style={{ marginRight: 10 }} />
             <Text style={[uploadStyles.fileName, isDarkMode && uploadStyles.textDark, { flex: 1, textAlign: 'left', marginBottom: 0 }]} numberOfLines={1}>
               {file.name}
@@ -63,6 +64,14 @@ export default function HomeScreen({ navigation }) {
   // Generic Attachments State
   const [attachments, setAttachments] = useState([]);
 
+  // Scrollbar State
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+
+  const { height: windowHeight } = useWindowDimensions();
+  const headerHeight = 80;
+
   const isGenerateEnabled = syllabusFiles.length > 0 && outcomeFiles.length > 0 && textbookFiles.length > 0 && (patternQuery.trim().length > 0 || attachments.length > 0);
 
   const handleSearch = () => {
@@ -72,7 +81,8 @@ export default function HomeScreen({ navigation }) {
       outcomeFiles,
       textbookFiles,
       attachments,
-      numSets: 1
+      numSets: 1,
+      isDarkMode
     });
   };
 
@@ -132,41 +142,45 @@ export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]} edges={['top', 'left', 'right']}>
       <StatusBar style={isDarkMode ? "light" : "dark"} />
+      {/* Header with Actions and Profile */}
+      <View style={[styles.header, isDarkMode && styles.headerDark]}>
+        <View style={[styles.logoContainer, isDarkMode && styles.logoContainerDark]}>
+          <Text style={[styles.logoText, isDarkMode && styles.textDark]}>QP Generator</Text>
+        </View>
+
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.iconButton} onPress={toggleDarkMode}>
+            <Ionicons name={isDarkMode ? "sunny" : "moon"} size={22} color={isDarkMode ? "#E2E8F0" : "#4B5563"} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.iconButton} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.profileContainer} onPress={() => setShowProfileModal(true)}>
+            <View style={styles.userInfo}>
+              <Text style={[styles.userName, isDarkMode && styles.textDark]}>{userName}</Text>
+              <Text style={[styles.userRole, isDarkMode && styles.textGrayDark]}>Professor</Text>
+            </View>
+            <View style={styles.avatar}>
+              <Ionicons name="person" size={20} color="#fff" />
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        style={{ flex: 1, height: '100%' }}
+        style={{ height: windowHeight - headerHeight }} // EXPLICIT HEIGHT
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={true}
-        scrollIndicatorInsets={{ right: 1 }}
-        indicatorStyle="black"
+        showsVerticalScrollIndicator={true} // ENABLE NATIVE
+        scrollEventThrottle={16}
+        onScroll={e => setScrollOffset(e.nativeEvent.contentOffset.y)}
+        onContentSizeChange={(w, h) => setContentHeight(h)}
+        onLayout={e => setContainerHeight(e.nativeEvent.layout.height)}
       >
-
-        {/* Header with Actions and Profile */}
-        <View style={[styles.header, isDarkMode && styles.headerDark]}>
-          <View style={[styles.logoContainer, isDarkMode && styles.logoContainerDark]}>
-            <Text style={[styles.logoText, isDarkMode && styles.textDark]}>QP Generator</Text>
-          </View>
-
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconButton} onPress={toggleDarkMode}>
-              <Ionicons name={isDarkMode ? "sunny" : "moon"} size={22} color={isDarkMode ? "#E2E8F0" : "#4B5563"} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.iconButton} onPress={handleLogout}>
-              <Ionicons name="log-out-outline" size={24} color="#EF4444" />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.profileContainer} onPress={() => setShowProfileModal(true)}>
-              <View style={styles.userInfo}>
-                <Text style={[styles.userName, isDarkMode && styles.textDark]}>{userName}</Text>
-                <Text style={[styles.userRole, isDarkMode && styles.textGrayDark]}>Professor</Text>
-              </View>
-              <View style={styles.avatar}>
-                <Ionicons name="person" size={20} color="#fff" />
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         {/* Hero Section */}
         <View style={styles.heroSection}>
@@ -314,7 +328,6 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // On web, we need a fixed height for scrolling to work reliably if parent is not set
     height: Platform.OS === 'web' ? '100vh' : '100%',
     backgroundColor: '#F3F4F6',
   },
@@ -337,7 +350,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
-    zIndex: 20,
+    zIndex: 1,
   },
   headerDark: {
     backgroundColor: '#1F2937',
@@ -798,8 +811,12 @@ const uploadStyles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#3b82f6',
+    borderColor: '#BFDBFE',
     marginBottom: 8,
+  },
+  fileItemDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
   },
   removeText: {
     color: '#EF4444',
